@@ -28,19 +28,7 @@ WHAT IS THIS?
   LOGIN (created by the installer):  daniel / daniel@2026   (Super Admin)
 
 ───────────────────────────────────────────────────────────────────────────
-STEP 1 - CREATE THE MYSQL DATABASE  (cPanel → "MySQL® Databases")
-───────────────────────────────────────────────────────────────────────────
-  1. Log in to cPanel: https://www.kisubihospital.co.ug:2083
-  2. Open "MySQL® Databases".
-  3. Create database:  name it  MeduSavuDb
-       → cPanel prefixes it, the real name becomes:  kisubihospital_MeduSavuDb
-  4. Create a database user, e.g.  kisubi_medsavu  with a STRONG password
-       (use the Password Generator; save the password somewhere safe).
-  5. "Add User To Database": user kisubi_medsavu → db kisubihospital_MeduSavuDb
-       tick  ALL PRIVILEGES  → Make Changes.
-  (Optional but nice) MultiPHP Manager → set PHP 8.1/8.2 for your domain.
 
-───────────────────────────────────────────────────────────────────────────
 STEP 2 - UPLOAD THE APP  (cPanel → "File Manager")
 ───────────────────────────────────────────────────────────────────────────
   1. File Manager → go to  public_html
@@ -53,17 +41,7 @@ STEP 2 - UPLOAD THE APP  (cPanel → "File Manager")
 
 ───────────────────────────────────────────────────────────────────────────
 STEP 3 - RUN THE INSTALLER  (once, in your browser)
-───────────────────────────────────────────────────────────────────────────
-  Open:  https://www.kisubihospital.co.ug/scheme/install.php
-  Fill in:
-     Database engine ......... MySQL / MariaDB
-     Database host ........... localhost
-     Database name ........... kisubihospital_MeduSavuDb     (the PREFIXED name!)
-     Database username ....... kisubi_medsavu
-     Database password ....... (the one you generated in Step 1.4)
-     Super Admin ............. daniel / daniel@2026  (prefilled)
-     [x] Seed sample data .... tick for a demo look, untick for empty live system
-  Click "Install MedSavu Now" → "Installation complete!" → Go to Login.
+
 
   Tables created: users, members, deposits, withdrawals, medical_bills,
   beneficiaries, sms_log, activity_log, settings.  Passwords stored hashed
