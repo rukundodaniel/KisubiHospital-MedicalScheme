@@ -1,9 +1,5 @@
 MedSavu PHP deployment record - Mon Oct 26 15:01:00 UTC 2026
-LIVE URL:   https://www.kisubihospital.co.ug/scheme/
-APP LOGIN:  daniel / daniel@2026   (Super Admin - CHANGE after first login: Users & Roles)
-MySQL DB:   kisubihospital_MeduSavuDb   (cPanel -> MySQL Databases)
-DB USER:    kisubihospital_medsavu
-DB PASSWORD: 6guJnTHx1RkDTQ56
+
 CONFIG:     the above is already written into public_html/scheme/config.php (protected 640 + .htaccess)
 install.php and all test files removed from the server after install.
 
