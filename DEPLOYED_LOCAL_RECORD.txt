@@ -1,0 +1,172 @@
+MedSavu PHP deployment record - Mon Oct 26 15:01:00 UTC 2026
+LIVE URL:   https://www.kisubihospital.co.ug/scheme/
+APP LOGIN:  daniel / daniel@2026   (Super Admin - CHANGE after first login: Users & Roles)
+MySQL DB:   kisubihospital_MeduSavuDb   (cPanel -> MySQL Databases)
+DB USER:    kisubihospital_medsavu
+DB PASSWORD: 6guJnTHx1RkDTQ56
+CONFIG:     the above is already written into public_html/scheme/config.php (protected 640 + .htaccess)
+install.php and all test files removed from the server after install.
+
+v3.1 PORTAL UPDATE (same session):
+- member portal + MoMo gateway deployed & live-tested (demo mode), then wiped clean
+- live DB: 0 members / 0 transactions; users: daniel only
+- portal credentials schema: members.portal_username/portal_pass_hash/portal_active/portal_created_at
+- momo_transactions table: reference_id widened to VARCHAR(64) live
+- NOTE: a WAF on the host blocks URLs named "wipe.php" (WP-site rule) - harmless,
+  avoid obvious filenames for maintenance scripts.
+- README_INSTALL_FOR_CPANEL.txt updated (also at /home/user/README_MedSavu_Portal.txt)
+
+== v6.0 MEMBER DEPOSIT BILLING + CENTRAL CLAIMS & DISBURSEMENT (1 Nov 2026) ==
+Pages: member-bills.php (bill builder/settle/cancel/reverse), member-account.php (deposit ledger,
+statements, CSV, portal SMS history), receipt-member.php (print/reprint receipt), claims-batch.php
+(schedule builder from settled bills, draft/preview/print/CSV/XLS/submit/reclaim/cancel),
+claims-central.php (Kisubi dashboard: 13 cards + SVG charts), claims-disburse.php (schedule &
+release payments: full/partial/batches, DSCH-YYYY-nnnn, over-schedule blocked), claims-reports.php
+(8 report tabs), portal-bills.php (member view). Engines: includes/member-billing-core.php,
+includes/schema60.php (additive). Patched: clinical-core (statuses+locks), claim-view (Received
+stamp, funding table, decision SMS, partial-by-amount), facility-claims, facilities (branding:
+deposit_funding/credit_limit/member_billing/license), institution.php + institution-members.php
+(KPIs, balances, view-account), dashboard.php + portal_header (nav), migrate.php, install.php
+(v6 chain + demo facility phones), sms-templates.php (partial save no longer wipes other keys;
+empty submission cannot erase a template).
+Guards: server-side balance verification; atomic settle (double-click/retry safe); no negative
+unless facility credit_limit>0; completed txns never deleted (RV-<bill_no> correction entries);
+bill->claim lock with release only on reject/cancel/reversal; DepositSelf bills never auto-claimed
+unless facility is Kisubi-prefunded; disbursement <= approved outstanding, consume-first pay,
+per-schedule reference dedupe; SMS always queued (works with gateway off); GL: settle Dr 2000/Cr
+1000, claim accrual Dr 5000/Cr 2100, pay Dr 2100/Cr method account.
+Verification (fresh install, sqlite): t40 49/49, t41 145/145, t50 111/111, t60 122/122 (spec
+TESTS 1-14 incl. tenant isolation, insufficient-funds block, receipt completeness, SMS content,
+claim dedupe, partial approve/return/reject, over-schedule block, partial->full disbursement,
+both reconciliations).
+MIGRATION for existing DBs: open schema-sync-v60.php once in the browser (additive only), then
+DELETE the file from the server. Live push intentionally NOT performed pending owner approval.
+
+== v6.1 WALLET RETIREMENT + CENTRAL MEMBER-DEPOSIT CLEARING (1 Nov 2026) ==
+MASTER SPEC: "remove wallet from the app; the clearing facility SEES the member deposit,
+settles bills FROM it (balance reduces), the member authorizes with OTP AND e-Card; a claim
+is generated and auto-sent to Kisubi; Kisubi pays the facility by bank / cash / mobile money;
+reconciled." Wallet UI fully retired — wallets.php and bill-settlement.php DELETED; institution
+portal wallet KPI, low-balance alert tune and pending-deposit strip removed; member/facility
+API, receipts, recon exports and member-UX strings scrubbed of wallet vocabulary (the HMIS
+wallet_balance/bill_settle actions now answer 410 retired with guidance — no new wallet under
+any other name). Historical tables/rows (institution_accounts, institution_deposits,
+bill_settlements incl. wallet_paid) KEPT for reconciliation — nothing financially deleted.
+REPLACED BY the central Member Deposit Account & ledger: one authoritative balance per member
+(SUM of deposits − deductions; facility rows never store balances), member number, principal/
+beneficiary link, institution affiliation, totals incl. APPROVED ADJUSTMENTS, pending
+settlements, full transaction history + CSV statement. Facilities view the balance for
+clearing only — recording deposits/adjustments and reversing settlements remain central-
+finance-only operations (reversal-only corrections; RV- ledger lines).
+FACILITY MEMBER CLEARING & BILL SETTLEMENT (member-bills.php; nav "Member Clearing"): search
+→ identity/status/cover → price-list bill builder → server-side balance verification showing
+Available Deposit / Amount to be settled / Remaining Deposit after settlement (or exact
+shortfall + block) → member authorization (OTP to enrolled phone + e-Card; portal approve/DECLINE;
+per-facility + global switches) → atomic settle (session one-shot token; replay refused;
+row-status lock; duplicate deduct impossible; concurrent two-thread test passes) → receipt →
+GL Dr 2000/Cr 1000 → AUTO-CLAIM: when funding model = Kisubi-prefunded and the facility
+auto-claim toggle is ON, a claim is generated, funded-split computed (DepositKisubi vs
+DepositSelf vs DirectPayer), lines deduped ONE per bill, and it is auto-Submitted to the
+Kisubi portal with a transmission-log event — no manual claims-batch step; retry-safe because
+a settled bill can never yield a second claim.
+KISUBI DESK: claims portal receives & auto-acknowledges on open ("Received by Kisubi");
+verify/price/eligibility/deposit-balance review (claim lines show member deposit balance);
+approve/partial/return/reject; approve → auto-schedule full net (policy switch, default ON;
+t50 pins OFF, t61 pins ON both tested); pay ONLY from schedule with method + reference —
+Bank (bank name + a/c), Cash (recipient name MANDATORY + ID → voucher prints acknowledgement
+line), Mobile Money (provider + validated number) — plus optional ≤2MB proof-of-payment file
+stored outside web-root, downloadable via authorized link; scheduled ≠ paid (status flips
+only on confirmed release); over-pay blocked; duplicate reference refused; pay GL Dr 2100/Cr
+1010/1020/1030; disbursement reversals refund and re-open the claim; daily reconciliation
+(reconcile.php) covers member deductions ↔ claims ↔ payments with variance + double-payment
+scan; central dashboard now shows Member deposit & claim oversight: total deposits, claims
+payable, deposits by facility and by beneficiary category.
+ADJUSTMENTS: central-finance-approved +/− corrections on the member ledger (mandatory reason,
+GL source mbadjust, below-zero negative blocked, never deletes history).
+FILES CHANGED (v6.1): member-billing-core.php (bill-level claim-line dedupe fix — multi-item
+bills previously could not claim; auth chain; auto-claim + transmission event; adjustments
+helpers untouched), member-bills.php, member-account.php, claims-disburse.php (+disb_paydetails
+self-healing table, cash-recipient guard, proof store/serve, method-aware pay modal),
+disbursement-voucher.php, claim-view.php (deposit-balance column), facilities.php (branding +
+!empty checkbox semantics + ledger-flash reword), institution.php (vestments stripped),
+settings.php (v6.1 automation panel + partial-save guard), receipt-member.php (auto-claim line),
+dashboard.php (oversight panel), hmis-api.php (410 retirements), portal*.php + reconcile.php +
+accounting.php + settlement-receipt.php + schema50.php (vocabulary), includes/header.php.
+Verification on ONE fresh install: t40 49/49, t41 145/145, t50 (rewritten v2 for v6.1 semantics)
+81/81, t60 123/123, v6.1 smoke 38/38, NEW t61-battery 46/46 (facility/global auto-claim
+toggles, portal DECLINE flow, double-settle race, concurrent dual settle, adjustments, cash
+guard, voucher acknowledgement, bank proof upload + download, 410 API retirement,
+reconciliation, wallet-absence sweeps, transmission-retry queue).
+TRANSMISSION RETRY (spec §6): if an auto-claim build ever fails transiently the settled bill is
+queued in mb_claim_retry (self-healing table); the Kisubi portal retries automatically on each
+open (max 10 attempts), keeps items queued while the auto-claim policy is off, shows a visible
+warning strip with the pending count, and NEVER duplicates — a bill already on a claim line is
+skipped. Facility-side manual submission via claims batch remains the fallback. Record finalized with run results below.
+MIGRATION for existing DBs: none required — disb_paydetails auto-creates on first disbursement;
+new settings keys default safely; then DELETE wallets.php + bill-settlement.php from the live
+server (files are gone from this package) and remove install.php/schema-sync files as before.
+
+
+== v7.0 FACILITY PORTAL MASTER RELEASE (1 Nov 2026, local chain green x2 runs) ==
+MASTER SPEC: "improve the facility dashboard, member verification, deposit settlement,
+facility price lists and claims tracking — facility operations run EXCLUSIVELY through the
+Facility Portal; central administration, adjudication and disbursement remain Kisubi-only."
+STAGE 1  INSPECTION: reused facilities/facility_prices/member_bills/sms_log/price_history —
+   no duplicate tables; f70_ensure() self-heal covers every new column (additive only).
+STAGE 2  DASHBOARD: facility-dashboard.php rebuilt — 12 live cards (members served, bills
+   count/value, deposits utilised, claims submitted/pending/approved/returned/cleared,
+   disbursed, outstanding, bank/cash/momo) + 6 charts (submitted-vs-approved, billing /
+   claims / disbursement monthly trends, method split, status distribution) + today/week/
+   month/quarter/year/custom filters; every card and chart click-through to the filtered
+   record list. All figures computed from the DB (t70 W9 asserts dashboard == SQL).
+STAGE 3  VERIFICATION: facility-verify.php — Method A e-card number, Method B phone lookup →
+   6-digit OTP sent to the MEMBER only, never rendered to staff; hashed at rest, single-use,
+   expiry/attempts/resend-cooldown/hourly lookup budget from Settings; permitted-details card
+   (name, member no, e-card, masked phone, status, scheme, available balance, restrictions);
+   post-verification window lets the facility open the billing desk. Audit rows on every
+   search, issue, verify and failure (member_verifications + activity_log).
+STAGE 4  SMS: balance SMS on successful verification (live figure), settlement SMS now
+   includes 'Receipt no: MBR-…' (template self-upgrades on live DBs); queue-first, gateway
+   optional, delivery status stored, facility SMS history page with capped retry (5),
+   no duplicates, failures never touch money. t70 W3/W5/W9 (A6, A7, A15).
+STAGE 5  PRICE LISTS: pricelist.php — facility-owned, add/edit/activate/deactivate,
+   categories, search, CSV import/export, every change journaled to price_history (cl_price_log),
+   billed-time prices frozen on member_bills lines, optional central approval policy
+   (f70_price_central_approval): edits park as 'Pending re-price', reject restores, member-bill
+   picker hides deactivated lines, cross-facility copy panel now central-only. (A8, A9, A22)
+STAGE 6  BILL+SETTLE: verified member → bill from own list → member e-card+OTP authorisation →
+   settle atomically: shortfall screen blocks overdraft (pending saved, never auto-approved),
+   concurrency-safe re-check inside the txn, no negative without authorised credit facility,
+   unique receipt per settlement (MBR-…), reversal-only corrections. (A10–A14)
+STAGE 7  CLAIMS: settled deposit-funded bills auto-generate one claim (dedup via claim_lines
+   UNIQUE), 12-status lifecycle with reasons, facility sees own claims only, correct-and-
+   resubmit, printable claim schedule; approve/decision fields Kisubi-only. (A16–A18)
+STAGE 8  DISBURSEMENTS (read-only for facilities): facility-disbursements.php totals
+   approved/cleared/disbursed/outstanding/partial/unpaid + payment history with method
+   (bank/cash/momo), refs, officer, status; scheduled ≠ paid — only Kisubi-confirmed counts;
+   statement print. Facilities cannot create/confirm. (A19, A20)
+STAGE 9  STRICT PORTAL + REPORTS: 13-module menu, zero central entries; fac_central_guard()
+   on 22 central pages (server-side bounce + 'BLOCKED central' audit); facility-reports.php
+   ships the 14 spec reports with period filter, print, CSV/Excel; facility-audit.php own-
+   facility trail. (A21, A23)
+STAGE 10 VERSION-UI REMOVAL: version banners/footers/cards/menus gone from login, dashboard,
+   member-bills, claims (header reads "MedSavu · Scheme Portal"); migration history
+   (schema*/install.php), deploy metadata (DEPLOYED_LOCAL_RECORD) and audit tables kept intact.
+   (A24 non-breaking)
+FIXES THIS CYCLE (discovered by the batteries, real bugs): f70_avail() force-cast mb_avail's
+   ARRAY to float → balances rendered "UGX 1" for facilities with credit; facility-users.php
+   INSERT had 10 values for 9 columns (portal enrolment was broken — probe-verified fix);
+   members.deposit_amount sync verified; member-bills price picker now filters deactivated
+   lines; settlement SMS receipt_no was read from the stale pre-update row (now the freshly
+   issued number); verify-OTP/balance SMS rows now stamped with facility_id so the portal
+   SMS history + retry can see them; pricelist cross-facility copy hidden+hard-blocked for
+   portal accounts; licence max_users cap ported to facility-users.php.
+DB: NO destructive migration — f70_ensure() additive self-heal (member_verifications,
+   facility_prices.active/price_pending/approval, activity_log.facility_id+index, sms template
+   clause). MySQL + SQLite, idempotent, safe to re-run; install.php NOT used on live.
+TESTS: full chain (fresh DB): t40 FAILS 0 · t41 TOTAL FAILS 0 · t50 81/0 · t60 123/0 ·
+   v61_smoke ALL PASS · t61 0/0 · t70 80 checks / T70 TOTAL FAILS 0 — twice consecutively
+   (runs 8 & 9). No regressions: every pre-v7.0 battery green unchanged.
+LIVE: push via FTP (cPanel UAPI still returns 401 on this host); pre-push snapshot to
+   public_html/live-backup-v70-pre; retired files stay .rm-tmp + 410 stubs; config.php and
+   data/ NEVER overwritten; read-only smoke over https after. Rollback = restore backup dir.
